@@ -244,6 +244,50 @@ export function formatUser(user: Record<string, unknown>): string {
   ].join("\n");
 }
 
+// --- Single entity formatters (for CRUD responses) ---
+
+export function formatCategory(cat: Category): string {
+  const flags = formatCategoryFlags(cat);
+  const group = cat.group_id ? ` [group: ${categoryName(cat.group_id)}]` : "";
+  const desc = cat.description ? `\n  Description: ${cat.description}` : "";
+  return `${cat.name}${flags}${group} (ID: ${cat.id})${desc}`;
+}
+
+export function formatTag(tag: Tag): string {
+  const desc = tag.description ? ` — ${tag.description}` : "";
+  const archived = tag.archived ? " (archived)" : "";
+  return `${tag.name}${desc}${archived} (ID: ${tag.id})`;
+}
+
+export function formatAccount(account: ManualAccount): string {
+  const display = account.display_name ?? account.name;
+  const inst = account.institution_name ? ` @ ${account.institution_name}` : "";
+  const closed = account.status === "closed" ? " (closed)" : "";
+  return `${display}${inst}${closed}\n  Balance: ${formatAmount(account.balance, account.currency)} | Type: ${account.type} | ID: ${account.id}`;
+}
+
+export function formatBulkUpdateResult(transactions: Transaction[]): string {
+  const count = transactions.length;
+  const preview = transactions.slice(0, 3).map(formatTransaction).join("\n\n");
+  const more = count > 3 ? `\n\n... and ${count - 3} more` : "";
+  return `${count} transaction${count === 1 ? "" : "s"} updated.\n\n${preview}${more}`;
+}
+
+export function formatDeleteResult(
+  type: string,
+  id: number,
+  deps?: Record<string, number>
+): string {
+  if (deps) {
+    const depLines = Object.entries(deps)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `  ${k}: ${v}`)
+      .join("\n");
+    return `Cannot delete ${type} ${id} — has dependencies:\n${depLines}\n\nUse force=true to delete anyway.`;
+  }
+  return `${type} ${id} deleted successfully.`;
+}
+
 // --- Helpers ---
 
 function formatAmount(amount: string | number, currency: string): string {

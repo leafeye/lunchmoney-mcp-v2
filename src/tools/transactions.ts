@@ -2,7 +2,11 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
 import { refreshCache } from "../cache.js";
-import { formatTransactions, formatTransaction } from "../format.js";
+import {
+  formatTransactions,
+  formatTransaction,
+  formatBulkUpdateResult,
+} from "../format.js";
 
 export function registerTransactionTools(server: McpServer): void {
   // --- list_transactions ---
@@ -186,6 +190,212 @@ action="delete": Provide only the id of the transaction to delete.`,
           return {
             content: [
               { type: "text", text: `Transaction ${params.id} deleted successfully.` },
+            ],
+          };
+        }
+      }
+    }
+  );
+
+  // --- bulk_update_transactions ---
+  server.tool(
+    "bulk_update_transactions",
+    `Update multiple transactions at once (max 500). Each item needs an id plus the fields to change.
+
+Common uses: batch-categorize transactions, bulk mark as reviewed, assign tags to multiple transactions.
+Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount, currency.`,
+    {
+      transactions: z
+        .array(
+          z.object({
+            id: z.number().describe("Transaction ID"),
+            category_id: z.number().nullable().optional().describe("Category ID (null to clear)"),
+            payee: z.string().optional().describe("Payee name"),
+            notes: z.string().nullable().optional().describe("Notes (empty string to clear)"),
+            tag_ids: z.array(z.number()).optional().describe("Tag IDs (overwrites existing)"),
+            status: z.enum(["reviewed", "unreviewed"]).optional().describe("Review status"),
+            date: z.string().optional().describe("Date YYYY-MM-DD"),
+            amount: z.union([z.number(), z.string()]).optional().describe("Amount"),
+            currency: z.string().optional().describe("Currency code"),
+          })
+        )
+        .min(1)
+        .max(500)
+        .describe("Array of transactions to update, each with id + fields"),
+    },
+    async (params) => {
+      const body = params.transactions.map((t) => {
+        const obj: Record<string, unknown> = { id: t.id };
+        if (t.category_id !== undefined) obj.category_id = t.category_id;
+        if (t.payee !== undefined) obj.payee = t.payee;
+        if (t.notes !== undefined) obj.notes = t.notes;
+        if (t.tag_ids !== undefined) obj.tag_ids = t.tag_ids;
+        if (t.status !== undefined) obj.status = t.status;
+        if (t.date !== undefined) obj.date = t.date;
+        if (t.amount !== undefined) obj.amount = t.amount;
+        if (t.currency !== undefined) obj.currency = t.currency;
+        return obj;
+      });
+
+      const { data, error, response } = await api.PUT("/transactions", {
+        body: { transactions: body } as never,
+      });
+      if (error) handleError(response.status, error);
+
+      return {
+        content: [
+          { type: "text", text: formatBulkUpdateResult(data!.transactions) },
+        ],
+      };
+    }
+  );
+
+  // --- split_transaction ---
+  server.tool(
+    "split_transaction",
+    `Split or unsplit a Lunch Money transaction.
+
+action="split": Provide id of the transaction to split, plus a splits array. Each split has amount (required) and optionally payee, date, category_id, notes. The split amounts MUST add up to the parent transaction amount.
+action="unsplit": Provide id of the split parent to restore it to normal.`,
+    {
+      action: z.enum(["split", "unsplit"]).describe("split or unsplit"),
+      id: z.number().describe("Transaction ID (parent ID for unsplit)"),
+      splits: z
+        .array(
+          z.object({
+            amount: z.union([z.number(), z.string()]).describe("Split amount (must sum to parent total)"),
+            payee: z.string().optional().describe("Payee (inherits from parent if omitted)"),
+            date: z.string().optional().describe("Date YYYY-MM-DD (inherits from parent if omitted)"),
+            category_id: z.number().optional().describe("Category ID (inherits from parent if omitted)"),
+            notes: z.string().optional().describe("Notes (inherits from parent if omitted)"),
+          })
+        )
+        .optional()
+        .describe("Split details (required for action=split)"),
+    },
+    async (params) => {
+      switch (params.action) {
+        case "split": {
+          if (!params.splits || params.splits.length < 2) {
+            return {
+              content: [{ type: "text", text: "Error: at least 2 splits are required." }],
+              isError: true,
+            };
+          }
+          const { data, error, response } = await api.POST(
+            "/transactions/split/{id}",
+            {
+              params: { path: { id: params.id } },
+              body: {
+                child_transactions: params.splits.map((s) => ({
+                  amount: s.amount,
+                  payee: s.payee,
+                  date: s.date,
+                  category_id: s.category_id,
+                  notes: s.notes,
+                })),
+              },
+            }
+          );
+          if (error) handleError(response.status, error);
+          const parent = data!;
+          const children = (parent as Record<string, unknown>).children as Array<Record<string, unknown>> | undefined;
+          const childCount = children?.length ?? params.splits.length;
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Transaction split into ${childCount} parts.\n\n${formatTransaction(parent)}`,
+              },
+            ],
+          };
+        }
+
+        case "unsplit": {
+          const { error, response } = await api.DELETE(
+            "/transactions/split/{id}",
+            {
+              params: { path: { id: params.id } },
+            }
+          );
+          if (error) handleError(response.status, error);
+          return {
+            content: [
+              { type: "text", text: `Transaction ${params.id} unsplit successfully. Original transaction restored.` },
+            ],
+          };
+        }
+      }
+    }
+  );
+
+  // --- group_transactions ---
+  server.tool(
+    "group_transactions",
+    `Group or ungroup Lunch Money transactions.
+
+action="group": Combine multiple transactions into one grouped transaction. Provide ids (array of transaction IDs), date (YYYY-MM-DD), and payee (required). Optionally set category_id, notes, tag_ids. The grouped transaction amount equals the sum of the original amounts.
+action="ungroup": Provide id of the group parent to restore original transactions.`,
+    {
+      action: z.enum(["group", "ungroup"]).describe("group or ungroup"),
+      id: z.number().optional().describe("Group parent ID (required for ungroup)"),
+      ids: z.array(z.number()).optional().describe("Transaction IDs to group (required for group)"),
+      date: z.string().optional().describe("Date for grouped transaction YYYY-MM-DD (required for group)"),
+      payee: z.string().optional().describe("Payee for grouped transaction (required for group)"),
+      category_id: z.number().nullable().optional().describe("Category ID for grouped transaction"),
+      notes: z.string().nullable().optional().describe("Notes for grouped transaction"),
+      tag_ids: z.array(z.number()).optional().describe("Tag IDs for grouped transaction"),
+    },
+    async (params) => {
+      switch (params.action) {
+        case "group": {
+          if (!params.ids || params.ids.length < 2 || !params.date || !params.payee) {
+            return {
+              content: [{ type: "text", text: "Error: ids (min 2), date, and payee are required for group." }],
+              isError: true,
+            };
+          }
+          const body: Record<string, unknown> = {
+            ids: params.ids,
+            date: params.date,
+            payee: params.payee,
+          };
+          if (params.category_id !== undefined) body.category_id = params.category_id;
+          if (params.notes !== undefined) body.notes = params.notes;
+          if (params.tag_ids !== undefined) body.tag_ids = params.tag_ids;
+
+          const { data, error, response } = await api.POST(
+            "/transactions/group",
+            { body: body as never }
+          );
+          if (error) handleError(response.status, error);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `${params.ids.length} transactions grouped.\n\n${formatTransaction(data!)}`,
+              },
+            ],
+          };
+        }
+
+        case "ungroup": {
+          if (params.id === undefined) {
+            return {
+              content: [{ type: "text", text: "Error: id is required for ungroup." }],
+              isError: true,
+            };
+          }
+          const { error, response } = await api.DELETE(
+            "/transactions/group/{id}",
+            {
+              params: { path: { id: params.id } },
+            }
+          );
+          if (error) handleError(response.status, error);
+          return {
+            content: [
+              { type: "text", text: `Transaction group ${params.id} removed. Original transactions restored.` },
             ],
           };
         }

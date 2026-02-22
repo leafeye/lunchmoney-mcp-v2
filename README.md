@@ -80,6 +80,33 @@ Get your API token from [Lunch Money Developer settings](https://my.lunchmoney.a
 | `split_transaction` | split, unsplit | Split a transaction into parts or restore the original |
 | `group_transactions` | group, ungroup | Combine transactions into a group or restore originals |
 
+## Example prompts
+
+Once connected, just ask your LLM naturally:
+
+**Reviewing & organizing**
+- "Show me all unreviewed transactions from this month"
+- "Categorize all my Amazon transactions as Shopping"
+- "What did I spend on groceries last week?"
+- "Mark these 5 transactions as reviewed"
+
+**Budget overview**
+- "Give me a spending summary for January"
+- "What are my recurring expenses?"
+- "How much do I have in each account?"
+
+**Managing transactions**
+- "Add a $45 transaction for dinner at Nobu yesterday"
+- "Split that $120 Costco transaction into $80 groceries and $40 household"
+- "Group these three Uber transactions into one"
+- "Delete the duplicate transaction I just created"
+
+**Organizing**
+- "Create a new category called Side Projects"
+- "Tag these transactions with travel"
+- "Show me all my categories with their IDs"
+- "Rename the Dining Out category to Restaurants"
+
 ## Development
 
 ```bash

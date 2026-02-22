@@ -1,0 +1,35 @@
+{
+  "name": "lunchmoney-mcp-v2",
+  "version": "0.1.0",
+  "description": "MCP server for the Lunch Money API v2",
+  "type": "module",
+  "bin": {
+    "lunchmoney-mcp-v2": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "generate:types": "openapi-typescript node_modules/@lunch-money/v2-api-spec/lunch-money-api-v2.yaml -o src/types.ts"
+  },
+  "keywords": [
+    "mcp",
+    "lunch-money",
+    "finance",
+    "api"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "openapi-fetch": "^0.17.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@lunch-money/v2-api-spec": "^2.8.5",
+    "@types/node": "^25.3.0",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3"
+  }
+}

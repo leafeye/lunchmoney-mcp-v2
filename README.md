@@ -4,16 +4,16 @@ MCP server for the [Lunch Money](https://lunchmoney.app) API v2. First MCP serve
 
 ## Features
 
-- **8 tools**: `get_user`, `list_transactions`, `manage_transaction`, `list_categories`, `list_tags`, `get_accounts`, `get_summary`, `get_recurring`
+- **14 tools** covering read, CRUD, and advanced operations
 - **Hydrated responses**: category, tag, and account names instead of raw IDs
-- **Smart caching**: categories, tags, and accounts cached at startup for fast lookups
+- **Smart caching**: categories, tags, and accounts cached at startup, auto-refreshed after mutations
 - **Type-safe**: generated from the official OpenAPI spec via `openapi-typescript`
 
 ## Setup
 
 ### Claude Desktop
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -30,6 +30,8 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 ```
 
 ### Claude Code
+
+Add to `.mcp.json` in your project or `~/.claude/mcp.json` globally:
 
 ```json
 {
@@ -49,16 +51,34 @@ Get your API token from [Lunch Money Developer settings](https://my.lunchmoney.a
 
 ## Tools
 
+### Read
+
 | Tool | Description |
 |---|---|
 | `get_user` | Account info (name, email, currency) |
 | `list_transactions` | List/search transactions with filters, or look up by ID |
-| `manage_transaction` | Create, update, or delete a transaction |
 | `list_categories` | All categories (nested or flat view) |
 | `list_tags` | All tags |
 | `get_accounts` | Manual + synced accounts with balances |
 | `get_summary` | Budget summary with income/spending/per-category breakdown |
 | `get_recurring` | Recurring items (subscriptions, bills, income) |
+
+### CRUD
+
+| Tool | Actions | Description |
+|---|---|---|
+| `manage_transaction` | create, update, delete | Single transaction operations |
+| `manage_category` | create, update, delete | Category management (force delete with dependency info) |
+| `manage_tag` | create, update, delete | Tag management (force delete with dependency info) |
+| `manage_account` | create, update, delete | Manual account management (Plaid accounts are read-only) |
+
+### Advanced
+
+| Tool | Actions | Description |
+|---|---|---|
+| `bulk_update_transactions` | — | Batch update up to 500 transactions at once |
+| `split_transaction` | split, unsplit | Split a transaction into parts or restore the original |
+| `group_transactions` | group, ungroup | Combine transactions into a group or restore originals |
 
 ## Development
 
@@ -72,6 +92,25 @@ Regenerate types from the OpenAPI spec:
 
 ```bash
 npm run generate:types
+```
+
+## Architecture
+
+```
+src/
+  index.ts          Entry point — registers tools, initializes cache
+  client.ts         openapi-fetch client + error handling
+  cache.ts          In-memory cache for categories, tags, accounts
+  format.ts         Text formatters for all response types
+  types.ts          Generated from @lunch-money/v2-api-spec
+  tools/
+    user.ts         get_user
+    transactions.ts list_transactions, manage_transaction, bulk_update, split, group
+    categories.ts   list_categories, manage_category
+    tags.ts         list_tags, manage_tag
+    accounts.ts     get_accounts, manage_account
+    summary.ts      get_summary
+    recurring.ts    get_recurring
 ```
 
 ## License

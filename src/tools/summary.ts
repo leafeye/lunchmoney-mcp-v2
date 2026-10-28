@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
+import { ensureCache } from "../cache.js";
 import { formatSummary } from "../format.js";
 
 export function registerSummaryTools(server: McpServer): void {
@@ -18,6 +19,7 @@ Tip: Use the first and last day of a month for a monthly overview (e.g. 2026-02-
         .describe("Include totals for income/spending (default: true)"),
     },
     async (params) => {
+      await ensureCache();
       const { data, error, response } = await api.GET("/summary", {
         params: {
           query: {

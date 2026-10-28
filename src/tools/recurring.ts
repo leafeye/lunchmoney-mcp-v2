@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
+import { ensureCache } from "../cache.js";
 import { formatRecurring } from "../format.js";
 import type { components } from "../types.js";
 
@@ -15,6 +16,7 @@ export function registerRecurringTools(server: McpServer): void {
       end_date: z.string().optional().describe("End of period (YYYY-MM-DD)"),
     },
     async (params) => {
+      await ensureCache();
       const { data, error, response } = await api.GET("/recurring_items", {
         params: {
           query: {

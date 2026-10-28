@@ -1,5 +1,5 @@
 import type { components } from "./types.js";
-import { categoryName, tagNames, accountName, getCache } from "./cache.js";
+import { categoryName, tagNames, accountName } from "./cache.js";
 
 type Transaction = components["schemas"]["transactionObject"];
 type Category = components["schemas"]["categoryObject"];

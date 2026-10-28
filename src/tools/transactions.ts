@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
-import { refreshCache } from "../cache.js";
+import { ensureCache } from "../cache.js";
 import {
   formatTransactions,
   formatTransaction,
@@ -30,6 +30,7 @@ Returns hydrated output with category names, tag names, and account names instea
       offset: z.number().min(0).optional().describe("Offset for pagination"),
     },
     async (params) => {
+      await ensureCache();
       // Single transaction lookup
       if (params.id !== undefined) {
         const { data, error, response } = await api.GET("/transactions/{id}", {
@@ -106,6 +107,7 @@ action="delete": Provide only the id of the transaction to delete.`,
       status: z.enum(["reviewed", "unreviewed"]).optional().describe("Review status"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "create": {
           if (!params.date || params.amount === undefined) {
@@ -224,6 +226,7 @@ Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount
         .describe("Array of transactions to update, each with id + fields"),
     },
     async (params) => {
+      await ensureCache();
       const body = params.transactions.map((t) => {
         const obj: Record<string, unknown> = { id: t.id };
         if (t.category_id !== undefined) obj.category_id = t.category_id;
@@ -274,6 +277,7 @@ action="unsplit": Provide id of the split parent to restore it to normal.`,
         .describe("Split details (required for action=split)"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "split": {
           if (!params.splits || params.splits.length < 2) {
@@ -347,6 +351,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
       tag_ids: z.array(z.number()).optional().describe("Tag IDs for grouped transaction"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "group": {
           if (!params.ids || params.ids.length < 2 || !params.date || !params.payee) {

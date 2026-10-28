@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
-import { refreshCache } from "../cache.js";
+import { ensureCache, refreshCache } from "../cache.js";
 import { formatCategories, formatCategory, formatDeleteResult } from "../format.js";
 import type { components } from "../types.js";
 
@@ -18,6 +18,7 @@ export function registerCategoryTools(server: McpServer): void {
         .describe("nested = grouped hierarchy, flat = all categories in a list (default: flat)"),
     },
     async (params) => {
+      await ensureCache();
       const apiFormat = params.format === "flat" ? "flattened" : (params.format ?? "flattened");
       const { data, error, response } = await api.GET("/categories", {
         params: { query: { format: apiFormat as "nested" | "flattened" } },
@@ -57,6 +58,7 @@ action="delete": Provide id. Use force=true to delete even if the category has d
       force: z.boolean().optional().describe("Force delete even with dependencies"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "create": {
           if (!params.name) {

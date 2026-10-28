@@ -1,7 +1,0 @@
-src/
-tsconfig.json
-.claude/
-CLAUDE.md
-.git/
-.gitignore
-node_modules/

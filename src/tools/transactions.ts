@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { components } from "../types.js";
 import { api, handleError } from "../client.js";
 import { ensureCache } from "../cache.js";
+import { addDays, today } from "../dates.js";
 import {
   formatTransactions,
   formatTransaction,
@@ -14,7 +16,7 @@ export function registerTransactionTools(server: McpServer): void {
     "list_transactions",
     `List or look up Lunch Money transactions. Without an id, returns filtered transactions (defaults to last 30 days if no dates given). With an id, returns that single transaction.
 
-Filters: start_date/end_date (YYYY-MM-DD), category_id, tag_id, status (reviewed/unreviewed), account_id. Use limit/offset for pagination.
+Filters: start_date/end_date (YYYY-MM-DD; end_date defaults to today, start_date to 30 days before end_date), category_id, tag_id, status (reviewed/unreviewed), manual_account_id, plaid_account_id. Use limit/offset for pagination.
 
 Returns hydrated output with category names, tag names, and account names instead of raw IDs.`,
     {
@@ -42,16 +44,10 @@ Returns hydrated output with category names, tag names, and account names instea
         };
       }
 
-      // Default to last 30 days when no dates provided
-      let startDate = params.start_date;
-      let endDate = params.end_date;
-      if (!startDate && !endDate) {
-        const now = new Date();
-        endDate = now.toISOString().slice(0, 10);
-        const past = new Date(now);
-        past.setDate(past.getDate() - 30);
-        startDate = past.toISOString().slice(0, 10);
-      }
+      // The API requires both dates or neither. Default to the last 30 days
+      // and fill in whichever side is missing.
+      const endDate = params.end_date ?? today();
+      const startDate = params.start_date ?? addDays(endDate, -30);
 
       // List transactions
       const { data, error, response } = await api.GET("/transactions", {
@@ -90,8 +86,8 @@ Returns hydrated output with category names, tag names, and account names instea
     "manage_transaction",
     `Create, update, or delete a single Lunch Money transaction.
 
-action="create": Provide date (YYYY-MM-DD), amount (positive=debit, negative=credit), and optionally payee, category_id, notes, account_id, tag_ids, currency.
-action="update": Provide id and any fields to change (payee, amount, date, category_id, notes, tag_ids, status).
+action="create": Provide date (YYYY-MM-DD), amount (positive=debit, negative=credit), and optionally payee, category_id, notes, manual_account_id, tag_ids, currency, status.
+action="update": Provide id and any fields to change (payee, amount, date, category_id, notes, currency, manual_account_id, tag_ids, status).
 action="delete": Provide only the id of the transaction to delete.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("The operation to perform"),
@@ -102,7 +98,7 @@ action="delete": Provide only the id of the transaction to delete.`,
       category_id: z.number().nullable().optional().describe("Category ID (null to clear)"),
       notes: z.string().nullable().optional().describe("Transaction notes"),
       currency: z.string().optional().describe("Three-letter currency code (defaults to primary)"),
-      manual_account_id: z.number().nullable().optional().describe("Manual account ID"),
+      manual_account_id: z.number().nullable().optional().describe("Manual account ID (null on update to detach from any account)"),
       tag_ids: z.array(z.number()).optional().describe("Tag IDs to set"),
       status: z.enum(["reviewed", "unreviewed"]).optional().describe("Review status"),
     },
@@ -125,7 +121,7 @@ action="delete": Provide only the id of the transaction to delete.`,
                   payee: params.payee,
                   category_id: params.category_id ?? undefined,
                   notes: params.notes ?? undefined,
-                  currency: params.currency as never,
+                  currency: toCurrency(params.currency),
                   manual_account_id: params.manual_account_id ?? undefined,
                   tag_ids: params.tag_ids,
                   status: params.status,
@@ -134,8 +130,13 @@ action="delete": Provide only the id of the transaction to delete.`,
             },
           });
           if (error) handleError(response.status, error);
-          const result = data!;
-          const created = result.transactions[0];
+          const created = data!.transactions[0];
+          if (!created) {
+            return {
+              content: [{ type: "text", text: "Transaction was not created: it duplicates an existing transaction." }],
+              isError: true,
+            };
+          }
           return {
             content: [
               {
@@ -159,7 +160,8 @@ action="delete": Provide only the id of the transaction to delete.`,
           if (params.payee !== undefined) body.payee = params.payee;
           if (params.category_id !== undefined) body.category_id = params.category_id;
           if (params.notes !== undefined) body.notes = params.notes;
-          if (params.currency !== undefined) body.currency = params.currency;
+          if (params.currency !== undefined) body.currency = toCurrency(params.currency);
+          if (params.manual_account_id !== undefined) body.manual_account_id = params.manual_account_id;
           if (params.tag_ids !== undefined) body.tag_ids = params.tag_ids;
           if (params.status !== undefined) body.status = params.status;
 
@@ -236,7 +238,7 @@ Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount
         if (t.status !== undefined) obj.status = t.status;
         if (t.date !== undefined) obj.date = t.date;
         if (t.amount !== undefined) obj.amount = t.amount;
-        if (t.currency !== undefined) obj.currency = t.currency;
+        if (t.currency !== undefined) obj.currency = toCurrency(t.currency);
         return obj;
       });
 
@@ -407,4 +409,11 @@ action="ungroup": Provide id of the group parent to restore original transaction
       }
     }
   );
+}
+
+type Currency = components["schemas"]["currencyEnum"];
+
+/** The API only accepts lowercase ISO 4217 codes; models often send "EUR". */
+function toCurrency(code: string | undefined): Currency | undefined {
+  return code?.toLowerCase() as Currency | undefined;
 }

@@ -52,7 +52,7 @@ export function registerAccountTools(server: McpServer): void {
     `Create, update, or delete a manual Lunch Money account. Synced (Plaid) accounts are read-only.
 
 action="create": Provide name, type (cash/credit/cryptocurrency/employee compensation/investment/loan/other liability/other asset/real estate/vehicle), and balance (required). Optionally set institution_name, currency, subtype.
-action="update": Provide id and any fields to change (name, balance, institution_name, display_name, status, subtype).
+action="update": Provide id and any fields to change (name, type, balance, currency, institution_name, display_name, status, subtype).
 action="delete": Provide id. WARNING: this permanently deletes the account. Transactions are NOT deleted by default.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("The operation to perform"),
@@ -84,7 +84,7 @@ action="delete": Provide id. WARNING: this permanently deletes the account. Tran
           };
           if (params.institution_name !== undefined) body.institution_name = params.institution_name;
           if (params.display_name !== undefined) body.display_name = params.display_name;
-          if (params.currency !== undefined) body.currency = params.currency;
+          if (params.currency !== undefined) body.currency = params.currency.toLowerCase();
           if (params.subtype !== undefined) body.subtype = params.subtype;
 
           const { data, error, response } = await api.POST("/manual_accounts", {
@@ -108,10 +108,11 @@ action="delete": Provide id. WARNING: this permanently deletes the account. Tran
           }
           const body: Record<string, unknown> = {};
           if (params.name !== undefined) body.name = params.name;
+          if (params.type !== undefined) body.type = params.type;
           if (params.balance !== undefined) body.balance = params.balance;
           if (params.institution_name !== undefined) body.institution_name = params.institution_name;
           if (params.display_name !== undefined) body.display_name = params.display_name;
-          if (params.currency !== undefined) body.currency = params.currency;
+          if (params.currency !== undefined) body.currency = params.currency.toLowerCase();
           if (params.subtype !== undefined) body.subtype = params.subtype;
           if (params.status !== undefined) body.status = params.status;
 

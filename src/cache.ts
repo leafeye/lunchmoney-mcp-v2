@@ -13,6 +13,10 @@ interface Cache {
   plaidAccounts: Map<number, PlaidAccount>;
 }
 
+// Names are only an enrichment: never let a slow cache request hold up a
+// tool response (or the result of a mutation that already succeeded).
+const CACHE_TIMEOUT_MS = 5_000;
+
 let cache: Cache | null = null;
 let loading: Promise<void> | null = null;
 
@@ -50,7 +54,10 @@ export async function ensureCache(): Promise<void> {
 export async function refreshCache(
   type: "categories" | "tags" | "manualAccounts" | "plaidAccounts"
 ): Promise<void> {
-  if (!cache) return ensureCache();
+  // Wait for an in-flight load first: it may have fetched this resource
+  // before the mutation, so refetch afterwards rather than reusing it.
+  await ensureCache();
+  if (!cache) return;
   try {
     switch (type) {
       case "categories":
@@ -97,9 +104,14 @@ export function accountName(
 
 // --- Fetchers ---
 
+function timeout(): AbortSignal {
+  return AbortSignal.timeout(CACHE_TIMEOUT_MS);
+}
+
 async function fetchCategories(): Promise<Map<number, Category>> {
   const { data, error, response } = await api.GET("/categories", {
     params: { query: { format: "flattened" } },
+    signal: timeout(),
   });
   if (error) handleError(response.status, error);
   const map = new Map<number, Category>();
@@ -110,7 +122,7 @@ async function fetchCategories(): Promise<Map<number, Category>> {
 }
 
 async function fetchTags(): Promise<Map<number, Tag>> {
-  const { data, error, response } = await api.GET("/tags");
+  const { data, error, response } = await api.GET("/tags", { signal: timeout() });
   if (error) handleError(response.status, error);
   const map = new Map<number, Tag>();
   for (const tag of data?.tags ?? []) {
@@ -120,7 +132,7 @@ async function fetchTags(): Promise<Map<number, Tag>> {
 }
 
 async function fetchManualAccounts(): Promise<Map<number, ManualAccount>> {
-  const { data, error, response } = await api.GET("/manual_accounts");
+  const { data, error, response } = await api.GET("/manual_accounts", { signal: timeout() });
   if (error) handleError(response.status, error);
   const map = new Map<number, ManualAccount>();
   for (const acct of data?.manual_accounts ?? []) {
@@ -130,7 +142,7 @@ async function fetchManualAccounts(): Promise<Map<number, ManualAccount>> {
 }
 
 async function fetchPlaidAccounts(): Promise<Map<number, PlaidAccount>> {
-  const { data, error, response } = await api.GET("/plaid_accounts");
+  const { data, error, response } = await api.GET("/plaid_accounts", { signal: timeout() });
   if (error) handleError(response.status, error);
   const map = new Map<number, PlaidAccount>();
   for (const acct of data?.plaid_accounts ?? []) {

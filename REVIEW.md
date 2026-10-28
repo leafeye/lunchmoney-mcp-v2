@@ -189,3 +189,9 @@ Gedragswijzigingen voor bestaande gebruikers (geen breaking schema-wijzigingen, 
 - `get_summary` doet een extra `/me`-request per aanroep.
 - `manage_account` create stuurt `institution_name: null` / `display_name: null` niet meer mee (de create-API accepteert geen null).
 - Als de cache niet laadt, probeert elke tool-call met namen het opnieuw (4 extra GETs). Bij een kapot token of een rate limit zijn dat extra requests per call.
+
+### Tweede review (subagent, gpt-6.1-sol)
+
+Twee extra bevindingen in de cache-fix, beide gereproduceerd en gefixt in `fix: Refresh after in-flight cache load and bound cache requests`:
+- **Middel:** een mutatie tijdens de warm-up liet verouderde namen achter. `refreshCache` haakte aan bij de lopende load, die de resource al vóór de mutatie had opgehaald. Nu wacht `refreshCache` die load af en haalt daarna opnieuw op.
+- **Middel:** cache-requests hadden geen timeout. Een hangende `/plaid_accounts` hield tool-responses vast, ook van mutaties die al gelukt waren. Elke cache-request breekt nu na 5 s af en de tool valt terug op ID's. Zolang de cache niet laadt, kost elke tool-call met namen daardoor tot 5 s extra.

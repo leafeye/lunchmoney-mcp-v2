@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
+import { ensureCache } from "../cache.js";
 import { formatSummary } from "../format.js";
 
 export function registerSummaryTools(server: McpServer): void {
@@ -18,25 +19,31 @@ Tip: Use the first and last day of a month for a monthly overview (e.g. 2026-02-
         .describe("Include totals for income/spending (default: true)"),
     },
     async (params) => {
-      const { data, error, response } = await api.GET("/summary", {
-        params: {
-          query: {
-            start_date: params.start_date,
-            end_date: params.end_date,
-            include_totals: params.include_totals ?? true,
+      await ensureCache();
+      const [summary, me] = await Promise.all([
+        api.GET("/summary", {
+          params: {
+            query: {
+              start_date: params.start_date,
+              end_date: params.end_date,
+              include_totals: params.include_totals ?? true,
+            },
           },
-        },
-      });
-      if (error) handleError(response.status, error);
+        }),
+        api.GET("/me"),
+      ]);
+      if (summary.error) handleError(summary.response.status, summary.error);
+      if (me.error) handleError(me.response.status, me.error);
 
       return {
         content: [
           {
             type: "text",
             text: formatSummary(
-              data as Record<string, unknown>,
+              summary.data!,
               params.start_date,
-              params.end_date
+              params.end_date,
+              me.data!.primary_currency
             ),
           },
         ],

@@ -13,9 +13,14 @@ interface Cache {
   plaidAccounts: Map<number, PlaidAccount>;
 }
 
-let cache: Cache | null = null;
+// Names are only an enrichment: never let a slow cache request hold up a
+// tool response (or the result of a mutation that already succeeded).
+const CACHE_TIMEOUT_MS = 5_000;
 
-export async function initCache(): Promise<void> {
+let cache: Cache | null = null;
+let loading: Promise<void> | null = null;
+
+async function loadCache(): Promise<void> {
   const [categories, tags, manualAccounts, plaidAccounts] = await Promise.all([
     fetchCategories(),
     fetchTags(),
@@ -29,52 +34,69 @@ export async function initCache(): Promise<void> {
   );
 }
 
-export function getCache(): Cache {
-  if (!cache) throw new Error("Cache not initialized. Call initCache() first.");
-  return cache;
+/**
+ * Loads the cache if it isn't loaded yet. Never throws: on failure, name
+ * lookups fall back to IDs and the next call tries again.
+ */
+export async function ensureCache(): Promise<void> {
+  if (cache) return;
+  loading ??= loadCache()
+    .catch((err) => {
+      console.error("Failed to load cache, showing IDs instead of names:", err);
+    })
+    .finally(() => {
+      loading = null;
+    });
+  await loading;
 }
 
+/** Best-effort refresh after a mutation. Never throws. */
 export async function refreshCache(
   type: "categories" | "tags" | "manualAccounts" | "plaidAccounts"
 ): Promise<void> {
-  const c = getCache();
-  switch (type) {
-    case "categories":
-      c.categories = await fetchCategories();
-      break;
-    case "tags":
-      c.tags = await fetchTags();
-      break;
-    case "manualAccounts":
-      c.manualAccounts = await fetchManualAccounts();
-      break;
-    case "plaidAccounts":
-      c.plaidAccounts = await fetchPlaidAccounts();
-      break;
+  // Wait for an in-flight load first: it may have fetched this resource
+  // before the mutation, so refetch afterwards rather than reusing it.
+  await ensureCache();
+  if (!cache) return;
+  try {
+    switch (type) {
+      case "categories":
+        cache.categories = await fetchCategories();
+        break;
+      case "tags":
+        cache.tags = await fetchTags();
+        break;
+      case "manualAccounts":
+        cache.manualAccounts = await fetchManualAccounts();
+        break;
+      case "plaidAccounts":
+        cache.plaidAccounts = await fetchPlaidAccounts();
+        break;
+    }
+  } catch (err) {
+    console.error(`Failed to refresh ${type} cache:`, err);
   }
 }
 
 export function categoryName(id: number | null): string {
   if (id === null) return "Uncategorized";
-  return getCache().categories.get(id)?.name ?? `Category #${id}`;
+  return cache?.categories.get(id)?.name ?? `Category #${id}`;
 }
 
 export function tagNames(ids: number[]): string[] {
-  const c = getCache();
-  return ids.map((id) => c.tags.get(id)?.name ?? `Tag #${id}`);
+  return ids.map((id) => cache?.tags.get(id)?.name ?? `Tag #${id}`);
 }
 
 export function accountName(
   manualId: number | null,
   plaidId: number | null
 ): string {
-  const c = getCache();
   if (manualId !== null) {
-    const acct = c.manualAccounts.get(manualId);
+    const acct = cache?.manualAccounts.get(manualId);
     return acct?.display_name ?? acct?.name ?? `Manual #${manualId}`;
   }
   if (plaidId !== null) {
-    const acct = c.plaidAccounts.get(plaidId);
+    const acct = cache?.plaidAccounts.get(plaidId);
     return acct?.display_name ?? acct?.name ?? `Plaid #${plaidId}`;
   }
   return "Cash";
@@ -82,9 +104,14 @@ export function accountName(
 
 // --- Fetchers ---
 
+function timeout(): AbortSignal {
+  return AbortSignal.timeout(CACHE_TIMEOUT_MS);
+}
+
 async function fetchCategories(): Promise<Map<number, Category>> {
   const { data, error, response } = await api.GET("/categories", {
     params: { query: { format: "flattened" } },
+    signal: timeout(),
   });
   if (error) handleError(response.status, error);
   const map = new Map<number, Category>();
@@ -95,32 +122,30 @@ async function fetchCategories(): Promise<Map<number, Category>> {
 }
 
 async function fetchTags(): Promise<Map<number, Tag>> {
-  const { data, error, response } = await api.GET("/tags");
+  const { data, error, response } = await api.GET("/tags", { signal: timeout() });
   if (error) handleError(response.status, error);
   const map = new Map<number, Tag>();
-  for (const tag of (data as { tags?: Tag[] })?.tags ?? []) {
+  for (const tag of data?.tags ?? []) {
     map.set(tag.id, tag);
   }
   return map;
 }
 
 async function fetchManualAccounts(): Promise<Map<number, ManualAccount>> {
-  const { data, error, response } = await api.GET("/manual_accounts");
+  const { data, error, response } = await api.GET("/manual_accounts", { signal: timeout() });
   if (error) handleError(response.status, error);
   const map = new Map<number, ManualAccount>();
-  for (const acct of (data as { manual_accounts?: ManualAccount[] })
-    ?.manual_accounts ?? []) {
+  for (const acct of data?.manual_accounts ?? []) {
     map.set(acct.id, acct);
   }
   return map;
 }
 
 async function fetchPlaidAccounts(): Promise<Map<number, PlaidAccount>> {
-  const { data, error, response } = await api.GET("/plaid_accounts");
+  const { data, error, response } = await api.GET("/plaid_accounts", { signal: timeout() });
   if (error) handleError(response.status, error);
   const map = new Map<number, PlaidAccount>();
-  for (const acct of (data as { plaid_accounts?: PlaidAccount[] })
-    ?.plaid_accounts ?? []) {
+  for (const acct of data?.plaid_accounts ?? []) {
     map.set(acct.id, acct);
   }
   return map;

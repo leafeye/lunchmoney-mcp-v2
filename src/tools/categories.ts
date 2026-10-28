@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { api, handleError } from "../client.js";
-import { refreshCache } from "../cache.js";
+import { ensureCache, refreshCache } from "../cache.js";
 import { formatCategories, formatCategory, formatDeleteResult } from "../format.js";
 import type { components } from "../types.js";
 
-type Category = components["schemas"]["categoryObject"];
+type CreateCategory = components["schemas"]["createCategoryRequestObject"];
+type UpdateCategory = components["schemas"]["updateCategoryRequestObject"];
 
 export function registerCategoryTools(server: McpServer): void {
   server.tool(
@@ -18,18 +19,16 @@ export function registerCategoryTools(server: McpServer): void {
         .describe("nested = grouped hierarchy, flat = all categories in a list (default: flat)"),
     },
     async (params) => {
-      const apiFormat = params.format === "flat" ? "flattened" : (params.format ?? "flattened");
+      await ensureCache();
+      const format = params.format ?? "flat";
       const { data, error, response } = await api.GET("/categories", {
-        params: { query: { format: apiFormat as "nested" | "flattened" } },
+        params: { query: { format: format === "nested" ? "nested" : "flattened" } },
       });
       if (error) handleError(response.status, error);
 
-      const categories = (data?.categories ?? []) as Category[];
-      const displayFormat = apiFormat === "nested" ? "nested" : "flat";
-
       return {
         content: [
-          { type: "text", text: formatCategories(categories, displayFormat) },
+          { type: "text", text: formatCategories(data?.categories ?? [], format) },
         ],
       };
     }
@@ -57,6 +56,7 @@ action="delete": Provide id. Use force=true to delete even if the category has d
       force: z.boolean().optional().describe("Force delete even with dependencies"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "create": {
           if (!params.name) {
@@ -65,7 +65,7 @@ action="delete": Provide id. Use force=true to delete even if the category has d
               isError: true,
             };
           }
-          const body: Record<string, unknown> = { name: params.name };
+          const body: Partial<CreateCategory> = { name: params.name };
           if (params.description !== undefined) body.description = params.description;
           if (params.is_income !== undefined) body.is_income = params.is_income;
           if (params.exclude_from_budget !== undefined) body.exclude_from_budget = params.exclude_from_budget;
@@ -73,14 +73,15 @@ action="delete": Provide id. Use force=true to delete even if the category has d
           if (params.is_group !== undefined) body.is_group = params.is_group;
           if (params.group_id !== undefined) body.group_id = params.group_id;
 
+          // The generated type marks fields with API defaults as required.
           const { data, error, response } = await api.POST("/categories", {
-            body: body as never,
+            body: body as CreateCategory,
           });
           if (error) handleError(response.status, error);
           await refreshCache("categories");
           return {
             content: [
-              { type: "text", text: `Category created.\n\n${formatCategory(data as Category)}` },
+              { type: "text", text: `Category created.\n\n${formatCategory(data!)}` },
             ],
           };
         }
@@ -92,7 +93,7 @@ action="delete": Provide id. Use force=true to delete even if the category has d
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {};
+          const body: Partial<UpdateCategory> = {};
           if (params.name !== undefined) body.name = params.name;
           if (params.description !== undefined) body.description = params.description;
           if (params.is_income !== undefined) body.is_income = params.is_income;
@@ -103,13 +104,14 @@ action="delete": Provide id. Use force=true to delete even if the category has d
 
           const { data, error, response } = await api.PUT("/categories/{id}", {
             params: { path: { id: params.id } },
-            body: body as never,
+            // The generated type wrongly marks is_group as required on update.
+            body: body as UpdateCategory,
           });
           if (error) handleError(response.status, error);
           await refreshCache("categories");
           return {
             content: [
-              { type: "text", text: `Category updated.\n\n${formatCategory(data as Category)}` },
+              { type: "text", text: `Category updated.\n\n${formatCategory(data!)}` },
             ],
           };
         }
@@ -127,10 +129,9 @@ action="delete": Provide id. Use force=true to delete even if the category has d
               query: params.force ? { force: true } : undefined,
             },
           });
-          if (response.status === 422) {
-            const deps = (error as { dependents?: Record<string, number> })?.dependents;
+          if (response.status === 422 && error && "dependents" in error) {
             return {
-              content: [{ type: "text", text: formatDeleteResult("Category", params.id, deps) }],
+              content: [{ type: "text", text: formatDeleteResult("Category", params.id, error.dependents) }],
               isError: true,
             };
           }

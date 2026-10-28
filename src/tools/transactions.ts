@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { api, handleError } from "../client.js";
-import { refreshCache } from "../cache.js";
+import type { components, operations } from "../types.js";
+import { api, handleError, toCurrency } from "../client.js";
+import { ensureCache } from "../cache.js";
+import { addDays, today } from "../dates.js";
 import {
   formatTransactions,
   formatTransaction,
@@ -12,9 +14,9 @@ export function registerTransactionTools(server: McpServer): void {
   // --- list_transactions ---
   server.tool(
     "list_transactions",
-    `List or look up Lunch Money transactions. Without an id, returns filtered transactions (defaults to last 30 days if no dates given). With an id, returns that single transaction.
+    `List or look up Lunch Money transactions. Without an id, returns filtered transactions. Without dates, returns the most recent transactions (newest first); with a date range, results are oldest first. With an id, returns that single transaction.
 
-Filters: start_date/end_date (YYYY-MM-DD), category_id, tag_id, status (reviewed/unreviewed), account_id. Use limit/offset for pagination.
+Filters: start_date/end_date (YYYY-MM-DD; if only one is given, end_date defaults to today and start_date to 30 days before end_date), category_id, tag_id, status (reviewed/unreviewed), manual_account_id, plaid_account_id. Use limit/offset for pagination.
 
 Returns hydrated output with category names, tag names, and account names instead of raw IDs.`,
     {
@@ -30,6 +32,7 @@ Returns hydrated output with category names, tag names, and account names instea
       offset: z.number().min(0).optional().describe("Offset for pagination"),
     },
     async (params) => {
+      await ensureCache();
       // Single transaction lookup
       if (params.id !== undefined) {
         const { data, error, response } = await api.GET("/transactions/{id}", {
@@ -41,15 +44,15 @@ Returns hydrated output with category names, tag names, and account names instea
         };
       }
 
-      // Default to last 30 days when no dates provided
+      // The API requires both dates or neither. Without dates it returns the
+      // most recent transactions; a range is sorted oldest first, so a default
+      // range would hide the newest ones behind the limit. Only fill in the
+      // missing side of a one-sided range.
       let startDate = params.start_date;
       let endDate = params.end_date;
-      if (!startDate && !endDate) {
-        const now = new Date();
-        endDate = now.toISOString().slice(0, 10);
-        const past = new Date(now);
-        past.setDate(past.getDate() - 30);
-        startDate = past.toISOString().slice(0, 10);
+      if (startDate || endDate) {
+        endDate ??= today();
+        startDate ??= addDays(endDate, -30);
       }
 
       // List transactions
@@ -89,8 +92,8 @@ Returns hydrated output with category names, tag names, and account names instea
     "manage_transaction",
     `Create, update, or delete a single Lunch Money transaction.
 
-action="create": Provide date (YYYY-MM-DD), amount (positive=debit, negative=credit), and optionally payee, category_id, notes, account_id, tag_ids, currency.
-action="update": Provide id and any fields to change (payee, amount, date, category_id, notes, tag_ids, status).
+action="create": Provide date (YYYY-MM-DD), amount (positive=debit, negative=credit), and optionally payee, category_id, notes, manual_account_id, tag_ids, currency, status.
+action="update": Provide id and any fields to change (payee, amount, date, category_id, notes, currency, manual_account_id, tag_ids, status).
 action="delete": Provide only the id of the transaction to delete.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("The operation to perform"),
@@ -101,11 +104,12 @@ action="delete": Provide only the id of the transaction to delete.`,
       category_id: z.number().nullable().optional().describe("Category ID (null to clear)"),
       notes: z.string().nullable().optional().describe("Transaction notes"),
       currency: z.string().optional().describe("Three-letter currency code (defaults to primary)"),
-      manual_account_id: z.number().nullable().optional().describe("Manual account ID"),
+      manual_account_id: z.number().nullable().optional().describe("Manual account ID (null on update to detach from any account)"),
       tag_ids: z.array(z.number()).optional().describe("Tag IDs to set"),
       status: z.enum(["reviewed", "unreviewed"]).optional().describe("Review status"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "create": {
           if (!params.date || params.amount === undefined) {
@@ -123,7 +127,7 @@ action="delete": Provide only the id of the transaction to delete.`,
                   payee: params.payee,
                   category_id: params.category_id ?? undefined,
                   notes: params.notes ?? undefined,
-                  currency: params.currency as never,
+                  currency: toCurrency(params.currency),
                   manual_account_id: params.manual_account_id ?? undefined,
                   tag_ids: params.tag_ids,
                   status: params.status,
@@ -132,8 +136,13 @@ action="delete": Provide only the id of the transaction to delete.`,
             },
           });
           if (error) handleError(response.status, error);
-          const result = data!;
-          const created = result.transactions[0];
+          const created = data!.transactions[0];
+          if (!created) {
+            return {
+              content: [{ type: "text", text: "Transaction was not created: it duplicates an existing transaction." }],
+              isError: true,
+            };
+          }
           return {
             content: [
               {
@@ -151,19 +160,20 @@ action="delete": Provide only the id of the transaction to delete.`,
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {};
+          const body: UpdateTransaction = {};
           if (params.date !== undefined) body.date = params.date;
           if (params.amount !== undefined) body.amount = params.amount;
           if (params.payee !== undefined) body.payee = params.payee;
           if (params.category_id !== undefined) body.category_id = params.category_id;
           if (params.notes !== undefined) body.notes = params.notes;
-          if (params.currency !== undefined) body.currency = params.currency;
+          if (params.currency !== undefined) body.currency = toCurrency(params.currency);
+          if (params.manual_account_id !== undefined) body.manual_account_id = params.manual_account_id;
           if (params.tag_ids !== undefined) body.tag_ids = params.tag_ids;
           if (params.status !== undefined) body.status = params.status;
 
           const { data, error, response } = await api.PUT("/transactions/{id}", {
             params: { path: { id: params.id } },
-            body: body as never,
+            body,
           });
           if (error) handleError(response.status, error);
           return {
@@ -224,8 +234,9 @@ Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount
         .describe("Array of transactions to update, each with id + fields"),
     },
     async (params) => {
+      await ensureCache();
       const body = params.transactions.map((t) => {
-        const obj: Record<string, unknown> = { id: t.id };
+        const obj: UpdateTransaction & { id: number } = { id: t.id };
         if (t.category_id !== undefined) obj.category_id = t.category_id;
         if (t.payee !== undefined) obj.payee = t.payee;
         if (t.notes !== undefined) obj.notes = t.notes;
@@ -233,12 +244,12 @@ Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount
         if (t.status !== undefined) obj.status = t.status;
         if (t.date !== undefined) obj.date = t.date;
         if (t.amount !== undefined) obj.amount = t.amount;
-        if (t.currency !== undefined) obj.currency = t.currency;
+        if (t.currency !== undefined) obj.currency = toCurrency(t.currency);
         return obj;
       });
 
       const { data, error, response } = await api.PUT("/transactions", {
-        body: { transactions: body } as never,
+        body: { transactions: body },
       });
       if (error) handleError(response.status, error);
 
@@ -274,6 +285,7 @@ action="unsplit": Provide id of the split parent to restore it to normal.`,
         .describe("Split details (required for action=split)"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "split": {
           if (!params.splits || params.splits.length < 2) {
@@ -299,8 +311,7 @@ action="unsplit": Provide id of the split parent to restore it to normal.`,
           );
           if (error) handleError(response.status, error);
           const parent = data!;
-          const children = (parent as Record<string, unknown>).children as Array<Record<string, unknown>> | undefined;
-          const childCount = children?.length ?? params.splits.length;
+          const childCount = parent.children?.length ?? params.splits.length;
           return {
             content: [
               {
@@ -347,6 +358,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
       tag_ids: z.array(z.number()).optional().describe("Tag IDs for grouped transaction"),
     },
     async (params) => {
+      await ensureCache();
       switch (params.action) {
         case "group": {
           if (!params.ids || params.ids.length < 2 || !params.date || !params.payee) {
@@ -355,7 +367,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {
+          const body: GroupRequest = {
             ids: params.ids,
             date: params.date,
             payee: params.payee,
@@ -366,7 +378,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
 
           const { data, error, response } = await api.POST(
             "/transactions/group",
-            { body: body as never }
+            { body }
           );
           if (error) handleError(response.status, error);
           return {
@@ -403,3 +415,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
     }
   );
 }
+
+type UpdateTransaction = components["schemas"]["updateTransactionObject"];
+type GroupRequest =
+  operations["groupTransactions"]["requestBody"]["content"]["application/json"];

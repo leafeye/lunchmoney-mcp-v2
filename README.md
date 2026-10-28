@@ -20,7 +20,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "lunchmoney": {
       "command": "npx",
-      "args": ["lunchmoney-mcp-v2"],
+      "args": ["-y", "lunchmoney-mcp-v2"],
       "env": {
         "LUNCHMONEY_TOKEN": "your-api-token-here"
       }
@@ -31,21 +31,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Claude Code
 
-Add to `.mcp.json` in your project or `~/.claude/mcp.json` globally:
-
-```json
-{
-  "mcpServers": {
-    "lunchmoney": {
-      "command": "npx",
-      "args": ["lunchmoney-mcp-v2"],
-      "env": {
-        "LUNCHMONEY_TOKEN": "your-api-token-here"
-      }
-    }
-  }
-}
+```bash
+claude mcp add lunchmoney -e LUNCHMONEY_TOKEN=your-api-token-here -- npx -y lunchmoney-mcp-v2
 ```
+
+Add `--scope user` to make it available in all projects. `--scope project` writes the config, including the token, to `.mcp.json` in the project; don't commit that file with a real token.
 
 Get your API token from [Lunch Money Developer settings](https://my.lunchmoney.app/developers).
 
@@ -129,6 +119,7 @@ src/
   client.ts         openapi-fetch client + error handling
   cache.ts          In-memory cache for categories, tags, accounts
   format.ts         Text formatters for all response types
+  dates.ts          Date helpers for default date ranges
   types.ts          Generated from @lunch-money/v2-api-spec
   tools/
     user.ts         get_user

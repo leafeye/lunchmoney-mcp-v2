@@ -211,3 +211,21 @@ Open punt, niet gefixt:
 
 Gevonden met live data na de relink, en gefixt in `fix: Return the newest transactions when no dates are given`:
 - **Middel:** `list_transactions` zonder datums vroeg "laatste 30 dagen" op. De API sorteert een datumbereik oplopend. Met de standaardlimiet van 50 en ~80 transacties per maand kreeg je dus de oudste transacties van de periode, en de recentste weken niet. Zonder datums stuurt de tool nu geen bereik mee; de API geeft dan de nieuwste transacties eerst. Bij een eenzijdig bereik vult de tool de ontbrekende datum nog steeds aan. **Gedragswijziging:** zonder datums is het resultaat niet meer begrensd tot 30 dagen, wel tot `limit`.
+
+### Live test met echt token: schrijven (2026-10-28)
+
+Alleen op eigen `MCP-TEST`-objecten, via de MCP-tools. Na afloop opgeruimd en gecontroleerd: er zijn geen `MCP-TEST`-tags, -categorieën, -accounts of -transacties over.
+
+Bevestigd tegen de echte API:
+- `manage_tag` en `manage_category`: create, update (naam en omschrijving) en delete werken. Namen worden na een mutatie direct ververst in de cache.
+- `manage_account`: create, update en delete werken. Update van `type` (cash → credit) werkt (punt 8). Valuta `"EUR"` wordt geaccepteerd (punt 9).
+- `manage_transaction`: create op een handmatig account, update en delete werken. Verplaatsen met `manual_account_id` werkt (punt 3).
+- `bulk_update_transactions`, `split_transaction` (split en unsplit) en `group_transactions` (group en ungroup) werken.
+- Een 422 bij delete geeft het verwachte formaat `dependents` terug. De melding met `force=true` werkt (punt 10).
+
+Live gevonden en gefixt in `fix: Show groups without an account and drop blank line before notes`:
+- **Laag:** er stond een lege regel vóór `Notes:`. Die bestond al vóór deze review.
+- **Laag:** een transactiegroep toonde `Account: Cash`. Groepen hebben geen account, dus nu staat er `(group)`.
+
+Opgemerkt, niet aangepast:
+- Lunch Money telt verwijderde transacties (ook split-delen en groepen) nog mee als dependency van een categorie. Na het verwijderen van alle testtransacties meldde de categorie er nog 5. Alle 5 gaven een 404. Verwijderen lukte daarna alleen met `force=true`.

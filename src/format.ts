@@ -16,9 +16,12 @@ type Summary =
 
 export function formatTransaction(t: Transaction): string {
   const tags = t.tag_ids.length > 0 ? ` [${tagNames(t.tag_ids).join(", ")}]` : "";
-  const account = accountName(t.manual_account_id, t.plaid_account_id);
+  // Transaction groups are not associated with any account.
+  const account = t.is_group_parent
+    ? "(group)"
+    : accountName(t.manual_account_id, t.plaid_account_id);
   const category = categoryName(t.category_id);
-  const notes = t.notes ? `\n  Notes: ${t.notes}` : "";
+  const notes = t.notes ? `  Notes: ${t.notes}` : "";
   const status = t.status === "unreviewed" ? " (unreviewed)" : "";
 
   return [

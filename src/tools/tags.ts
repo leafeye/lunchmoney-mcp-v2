@@ -5,7 +5,8 @@ import { refreshCache } from "../cache.js";
 import { formatTags, formatTag, formatDeleteResult } from "../format.js";
 import type { components } from "../types.js";
 
-type Tag = components["schemas"]["tagObject"];
+type CreateTag = components["schemas"]["createTagRequestObject"];
+type UpdateTag = components["schemas"]["updateTagRequestObject"];
 
 export function registerTagTools(server: McpServer): void {
   server.tool(
@@ -16,7 +17,7 @@ export function registerTagTools(server: McpServer): void {
       const { data, error, response } = await api.GET("/tags");
       if (error) handleError(response.status, error);
 
-      const tags = ((data as { tags?: Tag[] })?.tags ?? []) as Tag[];
+      const tags = data?.tags ?? [];
 
       return {
         content: [{ type: "text", text: formatTags(tags) }],
@@ -49,17 +50,18 @@ action="delete": Provide id. Use force=true to delete even if the tag is used on
               isError: true,
             };
           }
-          const body: Record<string, unknown> = { name: params.name };
+          const body: Partial<CreateTag> = { name: params.name };
           if (params.description !== undefined) body.description = params.description;
 
+          // The generated type marks fields with API defaults as required.
           const { data, error, response } = await api.POST("/tags", {
-            body: body as never,
+            body: body as CreateTag,
           });
           if (error) handleError(response.status, error);
           await refreshCache("tags");
           return {
             content: [
-              { type: "text", text: `Tag created.\n\n${formatTag(data as Tag)}` },
+              { type: "text", text: `Tag created.\n\n${formatTag(data!)}` },
             ],
           };
         }
@@ -71,20 +73,20 @@ action="delete": Provide id. Use force=true to delete even if the tag is used on
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {};
+          const body: UpdateTag = {};
           if (params.name !== undefined) body.name = params.name;
           if (params.description !== undefined) body.description = params.description;
           if (params.archived !== undefined) body.archived = params.archived;
 
           const { data, error, response } = await api.PUT("/tags/{id}", {
             params: { path: { id: params.id } },
-            body: body as never,
+            body,
           });
           if (error) handleError(response.status, error);
           await refreshCache("tags");
           return {
             content: [
-              { type: "text", text: `Tag updated.\n\n${formatTag(data as Tag)}` },
+              { type: "text", text: `Tag updated.\n\n${formatTag(data!)}` },
             ],
           };
         }

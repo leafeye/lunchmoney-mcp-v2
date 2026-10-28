@@ -1,5 +1,5 @@
 import createClient from "openapi-fetch";
-import type { paths } from "./types.js";
+import type { components, paths } from "./types.js";
 
 const token = process.env.LUNCHMONEY_TOKEN;
 
@@ -19,6 +19,15 @@ export const api = createClient<paths>({
     "Content-Type": "application/json",
   },
 });
+
+type Currency = components["schemas"]["currencyEnum"];
+
+/** The API only accepts lowercase ISO 4217 codes; models often send "EUR". */
+export function toCurrency(code: string): Currency;
+export function toCurrency(code: string | undefined): Currency | undefined;
+export function toCurrency(code: string | undefined): Currency | undefined {
+  return code?.toLowerCase() as Currency | undefined;
+}
 
 export class ApiError extends Error {
   constructor(

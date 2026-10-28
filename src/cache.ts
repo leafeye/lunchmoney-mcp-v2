@@ -113,7 +113,7 @@ async function fetchTags(): Promise<Map<number, Tag>> {
   const { data, error, response } = await api.GET("/tags");
   if (error) handleError(response.status, error);
   const map = new Map<number, Tag>();
-  for (const tag of (data as { tags?: Tag[] })?.tags ?? []) {
+  for (const tag of data?.tags ?? []) {
     map.set(tag.id, tag);
   }
   return map;
@@ -123,8 +123,7 @@ async function fetchManualAccounts(): Promise<Map<number, ManualAccount>> {
   const { data, error, response } = await api.GET("/manual_accounts");
   if (error) handleError(response.status, error);
   const map = new Map<number, ManualAccount>();
-  for (const acct of (data as { manual_accounts?: ManualAccount[] })
-    ?.manual_accounts ?? []) {
+  for (const acct of data?.manual_accounts ?? []) {
     map.set(acct.id, acct);
   }
   return map;
@@ -134,8 +133,7 @@ async function fetchPlaidAccounts(): Promise<Map<number, PlaidAccount>> {
   const { data, error, response } = await api.GET("/plaid_accounts");
   if (error) handleError(response.status, error);
   const map = new Map<number, PlaidAccount>();
-  for (const acct of (data as { plaid_accounts?: PlaidAccount[] })
-    ?.plaid_accounts ?? []) {
+  for (const acct of data?.plaid_accounts ?? []) {
     map.set(acct.id, acct);
   }
   return map;

@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { api, handleError } from "../client.js";
+import { api, handleError, toCurrency } from "../client.js";
 import { refreshCache } from "../cache.js";
 import { formatAccounts, formatAccount } from "../format.js";
 import type { components } from "../types.js";
 
-type ManualAccount = components["schemas"]["manualAccountObject"];
-type PlaidAccount = components["schemas"]["plaidAccountObject"];
+type CreateAccount = components["schemas"]["createManualAccountRequestObject"];
+type UpdateAccount = components["schemas"]["updateManualAccountRequestObject"];
 
 const accountTypeEnum = z.enum([
   "cash",
@@ -35,10 +35,8 @@ export function registerAccountTools(server: McpServer): void {
       if (manualRes.error) handleError(manualRes.response.status, manualRes.error);
       if (plaidRes.error) handleError(plaidRes.response.status, plaidRes.error);
 
-      const manual = ((manualRes.data as { manual_accounts?: ManualAccount[] })
-        ?.manual_accounts ?? []) as ManualAccount[];
-      const plaid = ((plaidRes.data as { plaid_accounts?: PlaidAccount[] })
-        ?.plaid_accounts ?? []) as PlaidAccount[];
+      const manual = manualRes.data?.manual_accounts ?? [];
+      const plaid = plaidRes.data?.plaid_accounts ?? [];
 
       return {
         content: [{ type: "text", text: formatAccounts(manual, plaid) }],
@@ -75,26 +73,26 @@ action="delete": Provide id. WARNING: this permanently deletes the account. Tran
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {
+          const body: CreateAccount = {
             name: params.name,
             type: params.type,
             balance: params.balance,
             status: params.status ?? "active",
             exclude_from_transactions: false,
           };
-          if (params.institution_name !== undefined) body.institution_name = params.institution_name;
-          if (params.display_name !== undefined) body.display_name = params.display_name;
-          if (params.currency !== undefined) body.currency = params.currency.toLowerCase();
+          if (params.institution_name != null) body.institution_name = params.institution_name;
+          if (params.display_name != null) body.display_name = params.display_name;
+          if (params.currency !== undefined) body.currency = toCurrency(params.currency);
           if (params.subtype !== undefined) body.subtype = params.subtype;
 
           const { data, error, response } = await api.POST("/manual_accounts", {
-            body: body as never,
+            body,
           });
           if (error) handleError(response.status, error);
           await refreshCache("manualAccounts");
           return {
             content: [
-              { type: "text", text: `Account created.\n\n${formatAccount(data as ManualAccount)}` },
+              { type: "text", text: `Account created.\n\n${formatAccount(data!)}` },
             ],
           };
         }
@@ -106,25 +104,25 @@ action="delete": Provide id. WARNING: this permanently deletes the account. Tran
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {};
+          const body: UpdateAccount = {};
           if (params.name !== undefined) body.name = params.name;
           if (params.type !== undefined) body.type = params.type;
           if (params.balance !== undefined) body.balance = params.balance;
           if (params.institution_name !== undefined) body.institution_name = params.institution_name;
           if (params.display_name !== undefined) body.display_name = params.display_name;
-          if (params.currency !== undefined) body.currency = params.currency.toLowerCase();
+          if (params.currency !== undefined) body.currency = toCurrency(params.currency);
           if (params.subtype !== undefined) body.subtype = params.subtype;
           if (params.status !== undefined) body.status = params.status;
 
           const { data, error, response } = await api.PUT("/manual_accounts/{id}", {
             params: { path: { id: params.id } },
-            body: body as never,
+            body,
           });
           if (error) handleError(response.status, error);
           await refreshCache("manualAccounts");
           return {
             content: [
-              { type: "text", text: `Account updated.\n\n${formatAccount(data as ManualAccount)}` },
+              { type: "text", text: `Account updated.\n\n${formatAccount(data!)}` },
             ],
           };
         }

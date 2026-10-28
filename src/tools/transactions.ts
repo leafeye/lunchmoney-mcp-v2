@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { components } from "../types.js";
-import { api, handleError } from "../client.js";
+import type { components, operations } from "../types.js";
+import { api, handleError, toCurrency } from "../client.js";
 import { ensureCache } from "../cache.js";
 import { addDays, today } from "../dates.js";
 import {
@@ -154,7 +154,7 @@ action="delete": Provide only the id of the transaction to delete.`,
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {};
+          const body: UpdateTransaction = {};
           if (params.date !== undefined) body.date = params.date;
           if (params.amount !== undefined) body.amount = params.amount;
           if (params.payee !== undefined) body.payee = params.payee;
@@ -167,7 +167,7 @@ action="delete": Provide only the id of the transaction to delete.`,
 
           const { data, error, response } = await api.PUT("/transactions/{id}", {
             params: { path: { id: params.id } },
-            body: body as never,
+            body,
           });
           if (error) handleError(response.status, error);
           return {
@@ -230,7 +230,7 @@ Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount
     async (params) => {
       await ensureCache();
       const body = params.transactions.map((t) => {
-        const obj: Record<string, unknown> = { id: t.id };
+        const obj: UpdateTransaction & { id: number } = { id: t.id };
         if (t.category_id !== undefined) obj.category_id = t.category_id;
         if (t.payee !== undefined) obj.payee = t.payee;
         if (t.notes !== undefined) obj.notes = t.notes;
@@ -243,7 +243,7 @@ Fields per transaction: category_id, payee, notes, tag_ids, status, date, amount
       });
 
       const { data, error, response } = await api.PUT("/transactions", {
-        body: { transactions: body } as never,
+        body: { transactions: body },
       });
       if (error) handleError(response.status, error);
 
@@ -305,8 +305,7 @@ action="unsplit": Provide id of the split parent to restore it to normal.`,
           );
           if (error) handleError(response.status, error);
           const parent = data!;
-          const children = (parent as Record<string, unknown>).children as Array<Record<string, unknown>> | undefined;
-          const childCount = children?.length ?? params.splits.length;
+          const childCount = parent.children?.length ?? params.splits.length;
           return {
             content: [
               {
@@ -362,7 +361,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
               isError: true,
             };
           }
-          const body: Record<string, unknown> = {
+          const body: GroupRequest = {
             ids: params.ids,
             date: params.date,
             payee: params.payee,
@@ -373,7 +372,7 @@ action="ungroup": Provide id of the group parent to restore original transaction
 
           const { data, error, response } = await api.POST(
             "/transactions/group",
-            { body: body as never }
+            { body }
           );
           if (error) handleError(response.status, error);
           return {
@@ -411,9 +410,6 @@ action="ungroup": Provide id of the group parent to restore original transaction
   );
 }
 
-type Currency = components["schemas"]["currencyEnum"];
-
-/** The API only accepts lowercase ISO 4217 codes; models often send "EUR". */
-function toCurrency(code: string | undefined): Currency | undefined {
-  return code?.toLowerCase() as Currency | undefined;
-}
+type UpdateTransaction = components["schemas"]["updateTransactionObject"];
+type GroupRequest =
+  operations["groupTransactions"]["requestBody"]["content"]["application/json"];

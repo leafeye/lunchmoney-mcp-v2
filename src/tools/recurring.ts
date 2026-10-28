@@ -4,9 +4,6 @@ import { api, handleError } from "../client.js";
 import { ensureCache } from "../cache.js";
 import { monthBounds } from "../dates.js";
 import { formatRecurring } from "../format.js";
-import type { components } from "../types.js";
-
-type Recurring = components["schemas"]["recurringObject"];
 
 export function registerRecurringTools(server: McpServer): void {
   server.tool(
@@ -29,8 +26,7 @@ export function registerRecurringTools(server: McpServer): void {
       });
       if (error) handleError(response.status, error);
 
-      const items = ((data as { recurring_items?: Recurring[] })
-        ?.recurring_items ?? []) as Recurring[];
+      const items = data?.recurring_items ?? [];
 
       return {
         content: [{ type: "text", text: formatRecurring(items) }],

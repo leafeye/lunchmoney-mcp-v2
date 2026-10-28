@@ -164,3 +164,28 @@ SDK 1.26 markeert `server.tool` als `@deprecated Use registerTool instead`. Het 
 
 ### 22. Laag: ID-schema's accepteren floats en negatieve getallen
 Alle `z.number()` voor ID's. **Fix:** `z.number().int()`. De API valideert dit ook, dus het levert alleen een betere foutmelding op. Niet opgepakt.
+
+## Status na uitvoering
+
+Op branch `review-improvements`. Elke fix is gecontroleerd met `tsc --noEmit --noUnusedLocals`, een build en de stdio smoke test. Fixes die request-bodies raken zijn ook gecontroleerd met een fetch-mock (`/tmp/lm-smoke/mockfetch.mjs` + `calls.mjs`): die logt de requests die de server echt verstuurt en geeft spec-achtige responses terug.
+
+| # | Status | Commit |
+|---|---|---|
+| 1, 2, 13 | Gefixt | `fix: Fall back to IDs when the name cache is unavailable` |
+| 3, 6, 7, 8, 9, 12, 14 | Gefixt | `fix: Send dropped update fields and complete one-sided date ranges` |
+| 4, 5, 10, 11 | Gefixt | `fix: Correct summary income sign and currency, delete error handling` |
+| 17 | Gefixt (3 casts blijven nodig voor create-bodies en category-update, met commentaar) | `refactor: Type request bodies and drop redundant casts` |
+| 15 | Gefixt | `fix: Report the package.json version in serverInfo` |
+| 16 | Gefixt (in de commits hierboven) | |
+| 18 | Gefixt (behalve een LICENSE-bestand: `license` is MIT, maar er is geen LICENSE-file; de copyrighthouder kiest de eigenaar zelf) | `chore: Ship only dist and build cleanly before publish` |
+| 20 | Gefixt | `docs: Use claude mcp add for Claude Code setup` |
+| 19 | Niet gedaan: dependency-upgrade hoort apart en met een echt token getest te worden | |
+| 21 | Niet gedaan: grote mechanische diff zonder gedragswinst | |
+| 22 | Niet gedaan: de API valideert al | |
+
+Gedragswijzigingen voor bestaande gebruikers (geen breaking schema-wijzigingen, wel ander gedrag):
+- `list_transactions` met alleen `start_date` of alleen `end_date` werkt nu, in plaats van een API-fout te geven.
+- `get_summary` toont Income positief, berekent Net anders en gebruikt de eigen valuta. Wie de oude output parseerde, ziet andere getallen.
+- `get_summary` doet een extra `/me`-request per aanroep.
+- `manage_account` create stuurt `institution_name: null` / `display_name: null` niet meer mee (de create-API accepteert geen null).
+- Als de cache niet laadt, probeert elke tool-call met namen het opnieuw (4 extra GETs). Bij een kapot token of een rate limit zijn dat extra requests per call.

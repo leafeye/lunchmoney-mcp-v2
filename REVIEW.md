@@ -195,3 +195,16 @@ Gedragswijzigingen voor bestaande gebruikers (geen breaking schema-wijzigingen, 
 Twee extra bevindingen in de cache-fix, beide gereproduceerd en gefixt in `fix: Refresh after in-flight cache load and bound cache requests`:
 - **Middel:** een mutatie tijdens de warm-up liet verouderde namen achter. `refreshCache` haakte aan bij de lopende load, die de resource al vóór de mutatie had opgehaald. Nu wacht `refreshCache` die load af en haalt daarna opnieuw op.
 - **Middel:** cache-requests hadden geen timeout. Een hangende `/plaid_accounts` hield tool-responses vast, ook van mutaties die al gelukt waren. Elke cache-request breekt nu na 5 s af en de tool valt terug op ID's. Zolang de cache niet laadt, kost elke tool-call met namen daardoor tot 5 s extra.
+
+### Live test met echt token: alleen lezen (2026-10-28)
+
+Getest met `/tmp/lm-smoke/live.mjs`. Dat script leest de token uit een bestand en print hem niet.
+
+Bevestigd tegen de echte API:
+- `get_user`, `list_tags`, `list_categories`, `get_accounts`, `list_transactions`, `get_summary` en `get_recurring` werken. Namen en EUR worden goed weergegeven, en de cache laadt (77 categorieën, 4 tags, 1 Plaid-account).
+- `list_transactions` met alleen `start_date` of alleen `end_date` werkt. Voor de fix gaf dit een fout.
+- `get_recurring` met alleen `end_date` werkt.
+- Inflow in `/summary` is echt negatief (bijv. `inflow.recurring_expected: -3325.07`). Punt 4 klopt dus.
+
+Open punt, niet gefixt:
+- **Wat "Spending" in `get_summary` betekent.** Augustus 2026 geeft `outflow.other_activity: -83.83`, `recurring_activity: 8.33` en `uncategorized: 982.88`. De tool toont dus `Spending: -€75.50` naast `Uncategorized spending: €982.88`. `other_activity` lijkt credits in uitgavencategorieën te verrekenen (een terugboeking van €1500 in `spaargeld_terug`) en ongecategoriseerde uitgaven níét mee te tellen. De totalen sluiten niet aan op de losse transacties (81 transacties, eigen indeling naar categorie, recurring en debit/credit). Hoe Lunch Money deze buckets precies berekent, weet ik daarom niet. De formatter geeft de API-getallen getrouw door. Of "Spending" de ongecategoriseerde uitgaven moet bevatten, en hoe het label moet heten, is een keuze die bij de gebruiker ligt.

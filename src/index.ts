@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { assertToken } from "./client.js";
@@ -12,12 +13,17 @@ import { registerAccountTools } from "./tools/accounts.js";
 import { registerSummaryTools } from "./tools/summary.js";
 import { registerRecurringTools } from "./tools/recurring.js";
 
+// dist/index.js -> package.json, both in the repo and in the npm package.
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")
+) as { version: string };
+
 async function main(): Promise<void> {
   assertToken();
 
   const server = new McpServer({
     name: "lunchmoney-mcp-v2",
-    version: "0.1.0",
+    version,
   });
 
   // Register all tools

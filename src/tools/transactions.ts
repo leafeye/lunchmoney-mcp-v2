@@ -14,9 +14,9 @@ export function registerTransactionTools(server: McpServer): void {
   // --- list_transactions ---
   server.tool(
     "list_transactions",
-    `List or look up Lunch Money transactions. Without an id, returns filtered transactions (defaults to last 30 days if no dates given). With an id, returns that single transaction.
+    `List or look up Lunch Money transactions. Without an id, returns filtered transactions. Without dates, returns the most recent transactions (newest first); with a date range, results are oldest first. With an id, returns that single transaction.
 
-Filters: start_date/end_date (YYYY-MM-DD; end_date defaults to today, start_date to 30 days before end_date), category_id, tag_id, status (reviewed/unreviewed), manual_account_id, plaid_account_id. Use limit/offset for pagination.
+Filters: start_date/end_date (YYYY-MM-DD; if only one is given, end_date defaults to today and start_date to 30 days before end_date), category_id, tag_id, status (reviewed/unreviewed), manual_account_id, plaid_account_id. Use limit/offset for pagination.
 
 Returns hydrated output with category names, tag names, and account names instead of raw IDs.`,
     {
@@ -44,10 +44,16 @@ Returns hydrated output with category names, tag names, and account names instea
         };
       }
 
-      // The API requires both dates or neither. Default to the last 30 days
-      // and fill in whichever side is missing.
-      const endDate = params.end_date ?? today();
-      const startDate = params.start_date ?? addDays(endDate, -30);
+      // The API requires both dates or neither. Without dates it returns the
+      // most recent transactions; a range is sorted oldest first, so a default
+      // range would hide the newest ones behind the limit. Only fill in the
+      // missing side of a one-sided range.
+      let startDate = params.start_date;
+      let endDate = params.end_date;
+      if (startDate || endDate) {
+        endDate ??= today();
+        startDate ??= addDays(endDate, -30);
+      }
 
       // List transactions
       const { data, error, response } = await api.GET("/transactions", {

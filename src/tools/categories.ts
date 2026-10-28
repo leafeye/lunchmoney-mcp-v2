@@ -129,10 +129,9 @@ action="delete": Provide id. Use force=true to delete even if the category has d
               query: params.force ? { force: true } : undefined,
             },
           });
-          if (response.status === 422) {
-            const deps = (error as { dependents?: Record<string, number> })?.dependents;
+          if (response.status === 422 && error && "dependents" in error) {
             return {
-              content: [{ type: "text", text: formatDeleteResult("Category", params.id, deps) }],
+              content: [{ type: "text", text: formatDeleteResult("Category", params.id, error.dependents) }],
               isError: true,
             };
           }

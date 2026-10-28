@@ -33,7 +33,7 @@ export class ApiError extends Error {
 export function handleError(status: number, body: unknown): never {
   const parsed = body as { message?: string; errors?: { errMsg: string }[] };
   const detail =
-    parsed?.errors?.map((e) => e.errMsg).join("; ") ?? parsed?.message;
+    parsed?.errors?.map((e) => e.errMsg).join("; ") || parsed?.message || undefined;
 
   switch (status) {
     case 401:

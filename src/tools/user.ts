@@ -12,7 +12,7 @@ export function registerUserTools(server: McpServer): void {
       if (error) handleError(response.status, error);
 
       return {
-        content: [{ type: "text", text: formatUser(data as Record<string, unknown>) }],
+        content: [{ type: "text", text: formatUser(data!) }],
       };
     }
   );

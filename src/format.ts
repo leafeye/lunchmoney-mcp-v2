@@ -7,6 +7,10 @@ type ManualAccount = components["schemas"]["manualAccountObject"];
 type PlaidAccount = components["schemas"]["plaidAccountObject"];
 type Tag = components["schemas"]["tagObject"];
 type Recurring = components["schemas"]["recurringObject"];
+type User = components["schemas"]["userObject"];
+type Summary =
+  | components["schemas"]["alignedSummaryResponseObject"]
+  | components["schemas"]["nonAlignedSummaryResponseObject"];
 
 // --- Transactions ---
 
@@ -145,60 +149,54 @@ export function formatTags(tags: Tag[]): string {
 // --- Summary ---
 
 export function formatSummary(
-  data: Record<string, unknown>,
+  data: Summary,
   startDate: string,
-  endDate: string
+  endDate: string,
+  currency: string
 ): string {
+  const money = (amount: number) => formatAmount(amount, currency);
   const lines: string[] = [`Budget Summary: ${startDate} to ${endDate}\n`];
 
-  // Totals
-  const totals = data.totals as {
-    inflow?: { other_activity?: number; recurring_activity?: number };
-    outflow?: { other_activity?: number; recurring_activity?: number; uncategorized?: number };
-  } | undefined;
-
+  // Totals. Inflow is reported as negative amounts (credits), so show its
+  // magnitude as income.
+  const totals = data.totals;
   if (totals) {
-    const inflow =
+    const income = Math.abs(
       (totals.inflow?.other_activity ?? 0) +
-      (totals.inflow?.recurring_activity ?? 0);
-    const outflow =
+        (totals.inflow?.recurring_activity ?? 0)
+    );
+    const spending =
       (totals.outflow?.other_activity ?? 0) +
       (totals.outflow?.recurring_activity ?? 0);
 
-    lines.push(`Income: ${formatCurrency(inflow)}`);
-    lines.push(`Spending: ${formatCurrency(outflow)}`);
-    lines.push(`Net: ${formatCurrency(inflow - outflow)}`);
+    lines.push(`Income: ${money(income)}`);
+    lines.push(`Spending: ${money(spending)}`);
+    lines.push(`Net: ${money(income - spending)}`);
 
     if (totals.outflow?.uncategorized) {
-      lines.push(`Uncategorized spending: ${formatCurrency(totals.outflow.uncategorized)}`);
+      lines.push(`Uncategorized spending: ${money(totals.outflow.uncategorized)}`);
     }
     lines.push("");
   }
 
   // Per-category breakdown
-  const categories = (data.categories ?? []) as {
-    category_id: number;
-    totals: { other_activity: number; recurring_activity: number; budgeted?: number | null; available?: number | null };
-  }[];
+  const activity = (t: { other_activity: number; recurring_activity: number }) =>
+    t.other_activity + t.recurring_activity;
+  const categories = [...data.categories].sort(
+    (a, b) => activity(b.totals) - activity(a.totals)
+  );
 
   if (categories.length > 0) {
     lines.push("Category Breakdown:");
-    const sorted = [...categories].sort(
-      (a, b) =>
-        b.totals.other_activity +
-        b.totals.recurring_activity -
-        (a.totals.other_activity + a.totals.recurring_activity)
-    );
-
-    for (const cat of sorted) {
-      const total = cat.totals.other_activity + cat.totals.recurring_activity;
+    for (const cat of categories) {
+      const total = activity(cat.totals);
       if (total === 0) continue;
       const name = categoryName(cat.category_id);
       const budget =
-        cat.totals.budgeted != null
-          ? ` (budget: ${formatCurrency(cat.totals.budgeted)}, avail: ${formatCurrency(cat.totals.available ?? 0)})`
+        "budgeted" in cat.totals && cat.totals.budgeted != null
+          ? ` (budget: ${money(cat.totals.budgeted)}, avail: ${money(cat.totals.available ?? 0)})`
           : "";
-      lines.push(`  ${name}: ${formatCurrency(total)}${budget}`);
+      lines.push(`  ${name}: ${money(total)}${budget}`);
     }
   }
 
@@ -234,12 +232,12 @@ export function formatRecurring(items: Recurring[]): string {
 
 // --- User ---
 
-export function formatUser(user: Record<string, unknown>): string {
+export function formatUser(user: User): string {
   return [
     `Name: ${user.name}`,
     `Email: ${user.email}`,
     `Budget: ${user.budget_name}`,
-    `Currency: ${(user.primary_currency as string)?.toUpperCase()}`,
+    `Currency: ${user.primary_currency.toUpperCase()}`,
     `ID: ${user.id}`,
   ].join("\n");
 }
@@ -295,11 +293,6 @@ function formatAmount(amount: string | number, currency: string): string {
   const sym = currencySymbol(currency);
   const abs = Math.abs(num).toFixed(2);
   return num < 0 ? `-${sym}${abs}` : `${sym}${abs}`;
-}
-
-function formatCurrency(amount: number): string {
-  const abs = Math.abs(amount).toFixed(2);
-  return amount < 0 ? `-$${abs}` : `$${abs}`;
 }
 
 function currencySymbol(code: string): string {
